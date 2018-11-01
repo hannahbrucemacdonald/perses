@@ -2197,28 +2197,6 @@ class NetworkXProposalOrder(object):
 
         return atom_torsions, logp
 
-    def _eligible_torsions(self, torsion_list):
-        """
-        Determine whether an atom (the first in each torsion of the torsion list) is eligible for proposal.
-        This is done by checking whether the other atoms in the torsion all have positions.
-
-        Parameters
-        ----------
-        torsion_list : list of list of ints
-            list of torsions defined by 4 atom indices, [atom, bond, angle, torsion]
-
-        Returns
-        -------
-        eligible_torsions : list of list of ints
-            list of torsions that can be used for proposal. May be empty
-        """
-        eligible_torsions = []
-        for torsion in torsion_list:
-            if set(torsion[1:]).issubset(self._atoms_with_positions_set):
-                eligible_torsions.append(torsion_list)
-
-        return torsion_list
-
     def _residue_to_graph(self, residue):
         """
         Create a NetworkX graph representing the connectivity of a residue
