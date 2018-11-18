@@ -7,7 +7,7 @@ import simtk.unit as units
 import logging
 import numpy as np
 import copy
-#from perses.rjmc import coordinate_numba
+from openmmtools import states
 import networkx as nx
 import simtk.openmm as openmm
 import collections
@@ -16,6 +16,7 @@ import openeye.oeomega as oeomega
 import simtk.openmm.app as app
 import time
 import logging
+from perses.storage import NetCDFStorageView
 _logger = logging.getLogger("geometry")
 
 class GeometryEngine(object):
@@ -898,6 +899,103 @@ class PredAtomTopologyIndex(oechem.OEUnaryAtomPred):
                 return True
         return False
 
+class ParticleFilterGeometryEngine(GeometryEngine):
+    """
+    This is a GeometryEngine that uses particle filtering to generate configurations. It does not use intermolecular
+    forces, but does use intramolecular nonbonded forces
+    """
+
+    def __init__(self, use_sterics=False, n_particles=100, metadata=None, storage=None):
+        self._use_sterics = use_sterics
+        self._n_particles = n_particles
+        self._metadata = metadata
+        if storage:
+            self._storage = NetCDFStorageView(storage, modname="GeometryEngine")
+
+    def propose(self, topology_proposal, current_sampler_state, beta):
+        """
+        Propose a new sampler state for the requested transition.
+
+        Parameters
+        ----------
+        topology_proposal : perses.rjmc.TopologyProposal
+            The topology proposal object for the transformation
+        current_sampler_state : openmmtools.states.SamplerState
+            The current sampler state of the old system
+        beta : float
+            The inverse temperature
+        Returns
+        -------
+        proposed_sampler_state : openmmtools.states.SamplerState
+            The proposed sampler state of the new system
+        logp_propose : float
+            The probability of the proposal
+        """
+        proposal_order_tool = ProposalOrderTools(topology_proposal)
+        growth_parameter_name = 'growth_stage'
+        forward_init = time.time()
+        atom_proposal_order, logp_choice = proposal_order_tool.determine_proposal_order(direction='forward')
+        proposal_order_forward = time.time() - forward_init
+        structure = parmed.openmm.load_topology(topology_proposal.new_topology, topology_proposal.new_system)
+
+        # find and copy known positions
+        atoms_with_positions = [structure.atoms[atom_idx] for atom_idx in topology_proposal.new_to_old_atom_map.keys()]
+        new_positions = self._copy_positions(atoms_with_positions, topology_proposal, current_sampler_state.positions)
+        growth_system_generator = GeometrySystemGenerator(topology_proposal.new_system, atom_proposal_order.keys(),
+                                                          growth_parameter_name,
+                                                          reference_topology=topology_proposal.new_topology,
+                                                          use_sterics=self._use_sterics)
+        growth_system = growth_system_generator.get_modified_system()
+
+    def logp_reverse(self, topology_proposal, new_sampler_state, old_sampler_state, beta):
+        """
+        Calculate the probability of a set of atoms being placed where they are
+
+        Parameters
+        ----------
+        topology_proposal : perses.rjmc.TopologyProposal
+            The topology proposal object for the transformation
+        new_sampler_state : openmmtools.states.SamplerState
+            The new sampler state
+        old_sampler_state : openmmtools.states.SamplerState
+            The old sampler state for which we want a logp
+        beta : float
+            The inverse temperature
+
+        Returns
+        -------
+        logp_reverse : float
+            the probability of the new positions being placed where they are
+        """
+        pass
+
+    def _copy_positions(self, atoms_with_positions, top_proposal, current_positions):
+        """
+        Copy the current positions to an array that will also hold new positions
+        Parameters
+        ----------
+        atoms_with_positions : list of parmed.Atom
+            atoms that currently have positions
+        top_proposal : topology_proposal.TopologyProposal
+            topology proposal object
+        current_positions : [n, 3] np.ndarray in nm
+            Positions of the current system
+
+        Returns
+        -------
+        new_positions : np.ndarray in nm
+            Array for new positions with known positions filled in
+        """
+        new_positions = units.Quantity(np.zeros([top_proposal.n_atoms_new, 3]), unit=units.nanometers)
+        # Workaround for CustomAngleForce NaNs: Create random non-zero positions for new atoms.
+        new_positions = units.Quantity(np.random.random([top_proposal.n_atoms_new, 3]), unit=units.nanometers)
+
+        current_positions = current_positions.in_units_of(units.nanometers)
+        #copy positions
+        for atom in atoms_with_positions:
+            old_index = top_proposal.new_to_old_atom_map[atom.idx]
+            new_positions[atom.idx] = current_positions[old_index]
+        return new_positions
 
 class BootstrapParticleFilter(object):
     """
@@ -928,7 +1026,6 @@ class BootstrapParticleFilter(object):
             How often to resample particles. default 10
         """
 
-        raise NotImplementedError("The implementation of this GeometryEngine is not complete")
         self._system = growth_context.getSystem()
         self._beta = beta
         self._growth_stage = 0
@@ -1664,7 +1761,7 @@ class GeometrySystemGeneratorFast(GeometrySystemGenerator):
     Use updateParametersInContext to make energy evaluation fast.
     """
 
-    def __init__(self, reference_system, growth_indices, parameter_name, add_extra_torsions=True, add_extra_angles=True, reference_topology=None, use_sterics=True, force_names=None, force_parameters=None, verbose=True):
+    def __init__(self, reference_system, growth_indices, parameter_name, add_extra_torsions=True, add_extra_angles=True, reference_topology=None, use_sterics=True, force_names=None, force_parameters=None, intra_residue_only=False, verbose=True):
         """
         Parameters
         ----------
@@ -1680,6 +1777,8 @@ class GeometrySystemGeneratorFast(GeometrySystemGenerator):
             A list of the names of forces that will be included in this system
         force_parameters : dict
             Options for the forces (e.g., NonbondedMethod : 'CutffNonPeriodic')
+        intra_residue_only : bool, optional, default=False
+            If true, only calculate intramolecular forces (including nonbonded) of the residue that is changing.
         verbose : bool, optional, default=False
             If True, will print verbose output.
 
@@ -1731,6 +1830,12 @@ class GeometrySystemGeneratorFast(GeometrySystemGenerator):
                 raise ValueError("Need to specify topology in order to add extra angles")
             self._determine_extra_angles(reference_forces['HarmonicAngleForce'], reference_topology, growth_indices)
         # TODO: Precompute growth indices for force terms for speed
+
+    def _mask_intermolecular_interactions(self):
+        """
+        Disable all interactions between the changing residue and the environment. This can accelerate calculations esp.
+        with particle filtering, and can leave the molecule in a more favorable configuration for the hybrid system.
+        """
 
     def set_growth_parameter_index(self, growth_index, context=None):
         """
