@@ -1005,18 +1005,22 @@ class BootstrapParticleFilter(object):
     of Perses.
     """
 
-    def __init__(self, growth_context, atom_torsions, initial_positions, beta, n_particles=18, resample_frequency=10):
+    def __init__(self, growth_system_generator, atom_torsions, initial_positions, beta, condition_positions=None, box_vectors=None, n_particles=18, resample_frequency=10, platform_name="CPU"):
         """
 
         Parameters
         ----------
-        growth_context : simtk.openmm.Context object
-            Context containing appropriate "growth system"
+        growth_system_generator : perses.rjmc.geometry.GeometrySystemGenerator object
+            growth system generator
         atom_torsions : dict
             parmed.Atom : parmed.Dihedral dict that specifies
             what torsion to use to propose each atom
         initial_positions : np.ndarray [n,3]
             The positions of existing atoms.
+        condition_positions : np.ndarray [n,3]
+            Positions on which we should run conditional SMC
+        box_vectors : list of Quantity
+            Periodic box vectors, if applicable
         beta : simtk.unit.Quantity
             The inverse temperature, with units
         n_particles : int, optional
@@ -1024,14 +1028,30 @@ class BootstrapParticleFilter(object):
             is NOT the number of atoms). Default 18.
         resample_frequency : int, optional
             How often to resample particles. default 10
+        platform_name : str, default CPU
+            The name of the openmm platform to use
         """
+        self._system = growth_system_generator.get_modified_system()
+        platform = openmm.Platform.getPlatformByName(platform_name)
+        integrator = openmm.VerletIntegrator(1*units.femtoseconds)
 
-        self._system = growth_context.getSystem()
+        self._growth_context = openmm.Context(self._system, integrator, platform)
+
+        if box_vectors:
+            self._box_vectors = box_vectors
+            self._growth_context.setPeriodicBoxVectors(*box_vectors)
+        else:
+            self._box_vectors = None
+
         self._beta = beta
         self._growth_stage = 0
-        self._growth_context = growth_context
         self._atom_torsions = atom_torsions
         self._n_particles = n_particles
+        if condition_positions:
+            self._condition_positions = condition_positions
+            self._conditional = True
+        else:
+            self._conditional = False
         self._resample_frequency = resample_frequency
         self._n_new_atoms = len(self._atom_torsions)
         self._initial_positions = initial_positions
@@ -1055,7 +1075,23 @@ class BootstrapParticleFilter(object):
         angle_position = angle_position.astype(np.float64)
         torsion_position = torsion_position.astype(np.float64)
         xyz = coordinate_numba.internal_to_cartesian(bond_position, angle_position, torsion_position, np.array([r, theta, phi], dtype=np.float64))
-        return xyz, r**2*np.sin(theta)
+        return xyz, np.abs(r**2*np.sin(theta))
+
+    def _cartesian_to_internal(self, atom_position, bond_position, angle_position, torsion_position):
+        """
+        Cartesian to internal function
+        """
+        from perses.rjmc import coordinate_numba
+        #ensure we have the correct units, then remove them
+        atom_position = atom_position.value_in_unit(units.nanometers).astype(np.float64)
+        bond_position = bond_position.value_in_unit(units.nanometers).astype(np.float64)
+        angle_position = angle_position.value_in_unit(units.nanometers).astype(np.float64)
+        torsion_position = torsion_position.value_in_unit(units.nanometers).astype(np.float64)
+
+        internal_coords = coordinate_numba.cartesian_to_internal(atom_position, bond_position, angle_position, torsion_position)
+
+
+        return internal_coords, np.abs(internal_coords[0]**2*np.sin(internal_coords[1]))
 
     def _get_bond_constraint(self, atom1, atom2, system):
         """
@@ -1248,7 +1284,7 @@ class BootstrapParticleFilter(object):
         theta = sigma_theta*np.random.randn() + theta0
         return theta
 
-    def _propose_atom(self, atom, torsion, new_positions):
+    def _propose_atom(self, atom, torsion, new_positions, condition_atom_positions=None):
         """
         Propose a set of internal coordinates (r, theta, phi) and transform
         to cartesian coordinates (with jacobian correction).
@@ -1263,6 +1299,9 @@ class BootstrapParticleFilter(object):
             torsion that contains relevant information for atom
         new_positions : [m, 3] np.array
             array of just the new positions (not existing atoms)
+        condition_atom_positions : [1,3] np.array
+            The positions of the atom if it already has one (for conditioning)
+
         Returns
         -------
         xyz : [1,3] np.array of float
@@ -1276,13 +1315,19 @@ class BootstrapParticleFilter(object):
         angle_atom = torsion.atom3
         torsion_atom = torsion.atom4
 
+        if condition_atom_positions:
+            internal_coords, detJ = self._cartesian_to_internal(condition_atom_positions, positions[bond_atom.idx], positions[angle_atom.idx], positions[torsion_atom.idx])
+
         if atom != torsion.atom1:
             raise Exception('atom != torsion.atom1')
 
         bond = self._get_relevant_bond(atom, bond_atom)
 
         if bond is not None:
-            r = self._propose_bond(bond)
+            if not condition_atom_positions:
+                r = self._propose_bond(bond)
+            else:
+                r = internal_coords[0]
             bond_k = bond.type.k
             sigma_r = units.sqrt(1/(self._beta*bond_k))
             logZ_r = np.log((np.sqrt(2*np.pi)*(sigma_r/units.angstroms))) # CHECK DOMAIN AND UNITS
@@ -1294,18 +1339,29 @@ class BootstrapParticleFilter(object):
 
         #propose an angle and calculate its probability
         angle = self._get_relevant_angle(atom, bond_atom, angle_atom)
-        theta = self._propose_angle(angle)
+
+        if not condition_atom_positions:
+            theta = self._propose_angle(angle)
+        else:
+            theta = internal_coords[1]
         angle_k = angle.type.k
         sigma_theta = units.sqrt(1/(self._beta*angle_k))
         logZ_theta = np.log((np.sqrt(2*np.pi)*(sigma_theta/units.radians))) # CHECK DOMAIN AND UNITS
         logp_theta = self._angle_logq(theta, angle) - logZ_theta
 
         #propose a torsion angle uniformly (this can be dramatically improved)
-        phi = np.random.uniform(-np.pi, np.pi)
+        if not condition_atom_positions:
+            phi = np.random.uniform(-np.pi, np.pi)
+        else:
+            phi = internal_coords[2]
         logp_phi = -np.log(2*np.pi)
 
         #get the new cartesian coordinates and detJ:
-        new_xyz, detJ = self._internal_to_cartesian(positions[bond_atom.idx], positions[angle_atom.idx], positions[torsion_atom.idx], r, theta, phi)
+        if not condition_atom_positions:
+            new_xyz, detJ = self._internal_to_cartesian(positions[bond_atom.idx], positions[angle_atom.idx], positions[torsion_atom.idx], r, theta, phi)
+        else:
+            new_xyz = condition_atom_positions
+
         #accumulate logp
         logp_proposal = logp_r + logp_theta + logp_phi + np.log(np.abs(detJ))
 
