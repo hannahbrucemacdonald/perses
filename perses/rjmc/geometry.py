@@ -905,10 +905,11 @@ class ParticleFilterGeometryEngine(GeometryEngine):
     forces, but does use intramolecular nonbonded forces
     """
 
-    def __init__(self, use_sterics=False, n_particles=100, metadata=None, storage=None):
+    def __init__(self, use_sterics=False, n_particles=100, metadata=None, storage=None, platform="CPU"):
         self._use_sterics = use_sterics
         self._n_particles = n_particles
         self._metadata = metadata
+        self._platform = platform
         if storage:
             self._storage = NetCDFStorageView(storage, modname="GeometryEngine")
 
@@ -949,7 +950,7 @@ class ParticleFilterGeometryEngine(GeometryEngine):
 
         atom_proposal_order, logp_choice = proposal_order_tool.determine_proposal_order(direction='forward')
 
-        particle_filter = BootstrapParticleFilter(growth_system_generator, atom_proposal_order, new_positions, beta, box_vectors = current_sampler_state.box_vectors, n_particles=self._n_particles, resample_frequency=1, platform_name="CPU")
+        particle_filter = BootstrapParticleFilter(growth_system_generator, atom_proposal_order, new_positions, beta, box_vectors = current_sampler_state.box_vectors, n_particles=self._n_particles, resample_frequency=1, platform_name=self._platform)
 
         configuration, logP = particle_filter.choose_configuration()
 
