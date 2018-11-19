@@ -1056,6 +1056,10 @@ class BootstrapParticleFilter(object):
         self._n_new_atoms = len(self._atom_torsions)
         self._initial_positions = initial_positions
         self._new_indices = [atom.idx for atom in self._atom_torsions.keys()]
+
+        if self._conditional:
+            self._n_particles += 1 # Add one more particle for the conditional
+
         #create a matrix for log weights (n_particles, n_stages)
         self._Wij = np.zeros([self._n_particles, self._n_new_atoms])
         #create an array for positions--only store new positions to avoid
@@ -1284,7 +1288,7 @@ class BootstrapParticleFilter(object):
         theta = sigma_theta*np.random.randn() + theta0
         return theta
 
-    def _propose_atom(self, atom, torsion, new_positions, condition_atom_positions=None):
+    def _propose_atom(self, atom, torsion, new_positions, conditional=False):
         """
         Propose a set of internal coordinates (r, theta, phi) and transform
         to cartesian coordinates (with jacobian correction).
@@ -1299,8 +1303,8 @@ class BootstrapParticleFilter(object):
             torsion that contains relevant information for atom
         new_positions : [m, 3] np.array
             array of just the new positions (not existing atoms)
-        condition_atom_positions : [1,3] np.array
-            The positions of the atom if it already has one (for conditioning)
+        conditional : bool
+            Whether to treat this as a conditional proposal (just calculate logP)
 
         Returns
         -------
@@ -1315,8 +1319,8 @@ class BootstrapParticleFilter(object):
         angle_atom = torsion.atom3
         torsion_atom = torsion.atom4
 
-        if condition_atom_positions:
-            internal_coords, detJ = self._cartesian_to_internal(condition_atom_positions, positions[bond_atom.idx], positions[angle_atom.idx], positions[torsion_atom.idx])
+        if conditional:
+            internal_coords, detJ = self._cartesian_to_internal(positions[atom.idx], positions[bond_atom.idx], positions[angle_atom.idx], positions[torsion_atom.idx])
 
         if atom != torsion.atom1:
             raise Exception('atom != torsion.atom1')
@@ -1324,7 +1328,7 @@ class BootstrapParticleFilter(object):
         bond = self._get_relevant_bond(atom, bond_atom)
 
         if bond is not None:
-            if not condition_atom_positions:
+            if not conditional:
                 r = self._propose_bond(bond)
             else:
                 r = internal_coords[0]
@@ -1340,7 +1344,7 @@ class BootstrapParticleFilter(object):
         #propose an angle and calculate its probability
         angle = self._get_relevant_angle(atom, bond_atom, angle_atom)
 
-        if not condition_atom_positions:
+        if not conditional:
             theta = self._propose_angle(angle)
         else:
             theta = internal_coords[1]
@@ -1350,17 +1354,17 @@ class BootstrapParticleFilter(object):
         logp_theta = self._angle_logq(theta, angle) - logZ_theta
 
         #propose a torsion angle uniformly (this can be dramatically improved)
-        if not condition_atom_positions:
+        if not conditional:
             phi = np.random.uniform(-np.pi, np.pi)
         else:
             phi = internal_coords[2]
         logp_phi = -np.log(2*np.pi)
 
         #get the new cartesian coordinates and detJ:
-        if not condition_atom_positions:
+        if not conditional:
             new_xyz, detJ = self._internal_to_cartesian(positions[bond_atom.idx], positions[angle_atom.idx], positions[torsion_atom.idx], r, theta, phi)
         else:
-            new_xyz = condition_atom_positions
+            new_xyz = positions[atom.idx]
 
         #accumulate logp
         logp_proposal = logp_r + logp_theta + logp_phi + np.log(np.abs(detJ))
@@ -1371,11 +1375,20 @@ class BootstrapParticleFilter(object):
         """
         Resample from the current set of weights and positions.
         """
-        particle_indices = range(self._n_particles)
-        new_indices = np.random.choice(particle_indices, size=self._n_particles, p=self._Wij[:, self._growth_stage-1])
+
+        # If we are doing conditional SMC, we only want to resample n-1 times, because the last particle will
+        # Remain the same (it's the one we are conditioning on)
+
+        if self._conditional:
+            n_resample = self._n_particles - 1
+        else:
+            n_resample = self._n_particles
+
+        particle_indices = range(n_resample)
+        new_indices = np.random.choice(particle_indices, size=n_resample, p=self._Wij[:, self._growth_stage-1])
+
         for particle_index in particle_indices:
             self._new_positions[particle_index, :, :] = self._new_positions[new_indices[particle_index], :, :]
-        self._Wij[:, self._growth_stage-1] = -np.log(self._n_particles) #set particle weights to be equal
 
     def _generate_configurations(self):
         """
@@ -1385,7 +1398,13 @@ class BootstrapParticleFilter(object):
         for i, atom_torsion in enumerate(self._atom_torsions.items()):
             self._growth_stage = i+1
             for particle_index in range(self._n_particles):
-                proposed_xyz, logp_proposal = self._propose_atom(atom_torsion[0], atom_torsion[1])
+
+                # If we are doing conditional SMC, we need to just calculate the logP of the final particle (the positions we need the logP for)
+                if particle_index == self._n_particles - 1 and self._conditional:
+                    proposed_xyz, logp_proposal = self._propose_atom(atom_torsion[0], atom_torsion[1], self._new_positions[particle_index, i, :], conditional=True)
+                else:
+                    proposed_xyz, logp_proposal = self._propose_atom(atom_torsion[0], atom_torsion[1], self._new_positions[particle_index, i, :])
+
                 self._new_positions[particle_index, i, :] = proposed_xyz
                 unnormalized_log_target = self._log_unnormalized_target(self._new_positions[particle_index, :,:])
                 if i > 0:
