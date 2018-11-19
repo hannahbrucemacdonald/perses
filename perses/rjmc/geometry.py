@@ -942,10 +942,11 @@ class ParticleFilterGeometryEngine(GeometryEngine):
         atoms_with_positions = [structure.atoms[atom_idx] for atom_idx in topology_proposal.new_to_old_atom_map.keys()]
         new_positions = self._copy_positions(atoms_with_positions, topology_proposal, current_sampler_state.positions)
 
-        growth_system_generator = GeometrySystemGenerator(topology_proposal.new_system, atom_proposal_order.keys(),
+        growth_system_generator = GeometrySystemGeneratorFast(topology_proposal.new_system, atom_proposal_order.keys(),
                                                           growth_parameter_name,
                                                           reference_topology=topology_proposal.new_topology,
                                                           use_sterics=self._use_sterics)
+
         atom_proposal_order, logp_choice = proposal_order_tool.determine_proposal_order(direction='forward')
 
         particle_filter = BootstrapParticleFilter(growth_system_generator, atom_proposal_order, new_positions, beta, box_vectors = current_sampler_state.box_vectors, n_particles=self._n_particles, resample_frequency=1, platform_name="CPU")
@@ -976,7 +977,25 @@ class ParticleFilterGeometryEngine(GeometryEngine):
         logp_reverse : float
             the probability of the new positions being placed where they are
         """
-        pass
+        proposal_order_tool = ProposalOrderTools(topology_proposal)
+        growth_parameter_name = 'growth_stage'
+        atom_proposal_order, logp_choice = proposal_order_tool.determine_proposal_order(direction='reverse')
+
+        structure = parmed.openmm.load_topology(topology_proposal.old_topology, topology_proposal.old_system)
+
+        growth_system_generator = GeometrySystemGeneratorFast(topology_proposal.old_system, atom_proposal_order.keys(),
+                                                          growth_parameter_name,
+                                                          reference_topology=topology_proposal.old_topology,
+                                                          use_sterics=self._use_sterics)
+        old_positions = old_sampler_state.positions
+
+        new_positions = new_sampler_state.positions
+
+        particle_filter = BootstrapParticleFilter(growth_system_generator, atom_proposal_order, new_positions, beta, box_vectors=old_sampler_state.box_vectors, condition_positions=old_positions, n_particles=self._n_particles, resample_frequency=1, platform_name="CPU")
+
+        logP_reverse = particle_filter.logP_conditioned
+
+        return logP_reverse
 
     def _copy_positions(self, atoms_with_positions, top_proposal, current_positions):
         """
