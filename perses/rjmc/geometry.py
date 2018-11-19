@@ -1442,6 +1442,9 @@ class BootstrapParticleFilter(object):
                     self._Wij[particle_index, i] = (unnormalized_log_target - logp_proposal) + self._Wij[particle_index, i-1]
                 else:
                     self._Wij[particle_index, i] = unnormalized_log_target - logp_proposal
+
+            # Try setting the ones that are nan to have logP of -inf
+            self._Wij[self._Wij[:, i]==np.nan, i] = -np.inf
             log_sum_log_weights = logsumexp(self._Wij[:,i])
             self._Wij -= log_sum_log_weights
             if i % self._resample_frequency == 0 and i != 0:
