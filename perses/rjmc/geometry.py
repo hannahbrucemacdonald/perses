@@ -1413,7 +1413,7 @@ class BootstrapParticleFilter(object):
             n_resample = self._n_particles
 
         particle_indices = range(n_resample)
-        new_indices = np.random.choice(particle_indices, size=n_resample, p=self._Wij[:, self._growth_stage-1])
+        new_indices = np.random.choice(particle_indices, size=n_resample, p=np.exp(self._Wij[:, self._growth_stage-1]))
 
         for particle_index in particle_indices:
             self._new_positions[particle_index, :, :] = self._new_positions[new_indices[particle_index], :, :]
@@ -1455,7 +1455,7 @@ class BootstrapParticleFilter(object):
         logP : float
            The probability of this choice
         """
-        configuration_index = np.random.choice(range(self._n_particles), size=1, p=self._Wij[:, self._n_new_atoms-1])
+        configuration_index = np.random.choice(range(self._n_particles), size=1, p=np.exp(self._Wij[:, self._n_new_atoms-1]))
         logP = self._Wij[configuration_index, self._n_new_atoms-1]
         new_positions = self._new_positions[configuration_index, :, :]
         configuration = copy.deepcopy(self._initial_positions)
