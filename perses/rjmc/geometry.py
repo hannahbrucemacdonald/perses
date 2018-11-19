@@ -941,11 +941,20 @@ class ParticleFilterGeometryEngine(GeometryEngine):
         # find and copy known positions
         atoms_with_positions = [structure.atoms[atom_idx] for atom_idx in topology_proposal.new_to_old_atom_map.keys()]
         new_positions = self._copy_positions(atoms_with_positions, topology_proposal, current_sampler_state.positions)
+
         growth_system_generator = GeometrySystemGenerator(topology_proposal.new_system, atom_proposal_order.keys(),
                                                           growth_parameter_name,
                                                           reference_topology=topology_proposal.new_topology,
                                                           use_sterics=self._use_sterics)
-        growth_system = growth_system_generator.get_modified_system()
+        atom_proposal_order, logp_choice = proposal_order_tool.determine_proposal_order(direction='forward')
+
+        particle_filter = BootstrapParticleFilter(growth_system_generator, atom_proposal_order, new_positions, beta, box_vectors = current_sampler_state.box_vectors, n_particles=self._n_particles, resample_frequency=1, platform_name="CPU")
+
+        configuration, logP = particle_filter.choose_configuration()
+
+        proposed_sampler_state = states.SamplerState(configuration, box_vectors=current_sampler_state.box_vectors)
+
+        return proposed_sampler_state, logP
 
     def logp_reverse(self, topology_proposal, new_sampler_state, old_sampler_state, beta):
         """
@@ -1031,6 +1040,7 @@ class BootstrapParticleFilter(object):
         platform_name : str, default CPU
             The name of the openmm platform to use
         """
+        self._growth_system_generator = growth_system_generator
         self._system = growth_system_generator.get_modified_system()
         platform = openmm.Platform.getPlatformByName(platform_name)
         integrator = openmm.VerletIntegrator(1*units.femtoseconds)
@@ -1047,15 +1057,16 @@ class BootstrapParticleFilter(object):
         self._growth_stage = 0
         self._atom_torsions = atom_torsions
         self._n_particles = n_particles
-        if condition_positions:
-            self._condition_positions = condition_positions
-            self._conditional = True
-        else:
-            self._conditional = False
         self._resample_frequency = resample_frequency
         self._n_new_atoms = len(self._atom_torsions)
         self._initial_positions = initial_positions
         self._new_indices = [atom.idx for atom in self._atom_torsions.keys()]
+
+        if condition_positions:
+            self._condition_positions = condition_positions[self._new_indices, :]
+            self._conditional = True
+        else:
+            self._conditional = False
 
         if self._conditional:
             self._n_particles += 1 # Add one more particle for the conditional
@@ -1143,7 +1154,7 @@ class BootstrapParticleFilter(object):
         """
         positions = copy.deepcopy(self._initial_positions)
         positions[self._new_indices] = new_positions
-        self._growth_context.setParameter('growth_stage', self._growth_stage)
+        self._growth_system_generator.set_growth_parameter_index(self._growth_stage, self._growth_context)
         self._growth_context.setPositions(positions)
         energy = self._growth_context.getState(getEnergy=True).getPotentialEnergy()
         return -self._beta*energy
@@ -1389,6 +1400,7 @@ class BootstrapParticleFilter(object):
 
         for particle_index in particle_indices:
             self._new_positions[particle_index, :, :] = self._new_positions[new_indices[particle_index], :, :]
+            self._Wij[particle_index, self._growth_stage-1] = self._Wij[new_indices[particle_index], self._growth_stage-1]
 
     def _generate_configurations(self):
         """
@@ -1401,7 +1413,7 @@ class BootstrapParticleFilter(object):
 
                 # If we are doing conditional SMC, we need to just calculate the logP of the final particle (the positions we need the logP for)
                 if particle_index == self._n_particles - 1 and self._conditional:
-                    proposed_xyz, logp_proposal = self._propose_atom(atom_torsion[0], atom_torsion[1], self._new_positions[particle_index, i, :], conditional=True)
+                    proposed_xyz, logp_proposal = self._propose_atom(atom_torsion[0], atom_torsion[1], self._condition_positions, conditional=True)
                 else:
                     proposed_xyz, logp_proposal = self._propose_atom(atom_torsion[0], atom_torsion[1], self._new_positions[particle_index, i, :])
 
@@ -1415,6 +1427,32 @@ class BootstrapParticleFilter(object):
             self._Wij -= np.log(sum_log_weights)
             if i % self._resample_frequency == 0 and i != 0:
                 self._resample()
+
+    def choose_configuration(self):
+        """
+        Select a configuration from one of the generated ones at random.
+
+        Returns
+        -------
+        configuration : np.array [n_atoms, 3]
+        logP : float
+           The probability of this choice
+        """
+        configuration_index = np.random.choice(range(self._n_particles), size=1, p=self._Wij[:, self._n_new_atoms-1])
+        logP = self._Wij[configuration_index, self._n_new_atoms-1]
+        new_positions = self._new_positions[configuration_index, :, :]
+        configuration = copy.deepcopy(self._initial_positions)
+        configuration[self._new_indices] = new_positions
+
+        return configuration, logP
+
+    @property
+    def logP_conditioned(self):
+        if not self._conditional:
+            raise ValueError("This needs to be run in conditional mode to provide this value")
+
+        # Return the weight of the conditioning positions at the end of particle filtering
+        return self._Wij[self._n_particles-1, self._n_new_atoms -1]
 
 
 class GeometrySystemGenerator(object):
