@@ -1437,9 +1437,9 @@ class BootstrapParticleFilter(object):
                 self._new_positions[particle_index, i, :] = units.Quantity(proposed_xyz, unit=units.nanometers)
                 unnormalized_log_target = self._log_unnormalized_target(self._new_positions[particle_index, :,:])
                 if i > 0:
-                    self._Wij = [particle_index, i] = (unnormalized_log_target - logp_proposal) + self._Wij[particle_index, i-1]
+                    self._Wij[particle_index, i] = (unnormalized_log_target - logp_proposal) + self._Wij[particle_index, i-1]
                 else:
-                    self._Wij = [particle_index, i] = unnormalized_log_target - logp_proposal
+                    self._Wij[particle_index, i] = unnormalized_log_target - logp_proposal
             sum_log_weights = np.sum(np.exp(self._Wij[:,i]))
             self._Wij -= np.log(sum_log_weights)
             if i % self._resample_frequency == 0 and i != 0:
