@@ -1434,7 +1434,7 @@ class BootstrapParticleFilter(object):
                 else:
                     proposed_xyz, logp_proposal = self._propose_atom(atom_torsion[0], atom_torsion[1], self._new_positions[particle_index, :, :])
 
-                self._new_positions[particle_index, i, :] = proposed_xyz
+                self._new_positions[particle_index, i, :] = units.Quantity(proposed_xyz, unit=units.nanometers)
                 unnormalized_log_target = self._log_unnormalized_target(self._new_positions[particle_index, :,:])
                 if i > 0:
                     self._Wij = [particle_index, i] = (unnormalized_log_target - logp_proposal) + self._Wij[particle_index, i-1]
