@@ -1092,7 +1092,7 @@ class BootstrapParticleFilter(object):
         self._Wij = np.zeros([self._n_particles, self._n_new_atoms])
         #create an array for positions--only store new positions to avoid
         #consuming way too much memory
-        self._new_positions = np.zeros([self._n_particles, self._n_new_atoms, 3])
+        self._new_positions = units.Quantity(np.zeros([self._n_particles, self._n_new_atoms, 3]), unit=units.nanometers)
         self._generate_configurations()
 
     def _internal_to_cartesian(self, bond_position, angle_position, torsion_position, r, theta, phi):
@@ -1432,7 +1432,7 @@ class BootstrapParticleFilter(object):
                 if particle_index == self._n_particles - 1 and self._conditional:
                     proposed_xyz, logp_proposal = self._propose_atom(atom_torsion[0], atom_torsion[1], self._condition_positions, conditional=True)
                 else:
-                    proposed_xyz, logp_proposal = self._propose_atom(atom_torsion[0], atom_torsion[1], self._new_positions[particle_index, i, :])
+                    proposed_xyz, logp_proposal = self._propose_atom(atom_torsion[0], atom_torsion[1], self._new_positions[particle_index, :, :])
 
                 self._new_positions[particle_index, i, :] = proposed_xyz
                 unnormalized_log_target = self._log_unnormalized_target(self._new_positions[particle_index, :,:])
