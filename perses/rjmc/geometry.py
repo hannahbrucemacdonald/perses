@@ -1090,10 +1090,10 @@ class BootstrapParticleFilter(object):
             self._n_particles += 1 # Add one more particle for the conditional
 
         #create a matrix for log weights (n_particles, n_stages)
-        self._Wij = np.random.rand(self._n_particles, self._n_new_atoms)
+        self._Wij = np.zeros([self._n_particles, self._n_new_atoms])
         #create an array for positions--only store new positions to avoid
         #consuming way too much memory
-        self._new_positions = units.Quantity(np.zeros([self._n_particles, self._n_new_atoms, 3]), unit=units.nanometers)
+        self._new_positions = units.Quantity(np.random.rand(self._n_particles, self._n_new_atoms, 3), unit=units.nanometers)
         self._generate_configurations()
 
     def _internal_to_cartesian(self, bond_position, angle_position, torsion_position, r, theta, phi):
