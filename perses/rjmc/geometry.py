@@ -1424,6 +1424,7 @@ class BootstrapParticleFilter(object):
         Generate the ensemble of configurations of the new atoms, approximately
         from p(x_new | x_common).
         """
+        from scipy.misc import logsumexp
         for i, atom_torsion in enumerate(self._atom_torsions.items()):
             self._growth_stage = i+1
             for particle_index in range(self._n_particles):
@@ -1440,8 +1441,8 @@ class BootstrapParticleFilter(object):
                     self._Wij[particle_index, i] = (unnormalized_log_target - logp_proposal) + self._Wij[particle_index, i-1]
                 else:
                     self._Wij[particle_index, i] = unnormalized_log_target - logp_proposal
-            sum_log_weights = np.sum(np.exp(self._Wij[:,i]))
-            self._Wij -= np.log(sum_log_weights)
+            log_sum_log_weights = logsumexp(self._Wij[:,i])
+            self._Wij -= log_sum_log_weights
             if i % self._resample_frequency == 0 and i != 0:
                 self._resample()
 
