@@ -1383,9 +1383,9 @@ class BootstrapParticleFilter(object):
 
         #propose a torsion angle uniformly (this can be dramatically improved)
         if not conditional:
-            phi = np.random.uniform(-np.pi, np.pi)
+            phi = np.random.uniform(-np.pi, np.pi) * units.radians
         else:
-            phi = internal_coords[2]
+            phi = internal_coords[2] * units.radians
         logp_phi = -np.log(2*np.pi)
 
         #get the new cartesian coordinates and detJ:
