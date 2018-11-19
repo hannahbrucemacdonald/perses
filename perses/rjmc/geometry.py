@@ -943,7 +943,7 @@ class ParticleFilterGeometryEngine(GeometryEngine):
         atoms_with_positions = [structure.atoms[atom_idx] for atom_idx in topology_proposal.new_to_old_atom_map.keys()]
         new_positions = self._copy_positions(atoms_with_positions, topology_proposal, current_sampler_state.positions)
 
-        growth_system_generator = GeometrySystemGenerator(topology_proposal.new_system, atom_proposal_order.keys(),
+        growth_system_generator = GeometrySystemGeneratorFast(topology_proposal.new_system, atom_proposal_order.keys(),
                                                           growth_parameter_name,
                                                           reference_topology=topology_proposal.new_topology,
                                                           use_sterics=self._use_sterics)
