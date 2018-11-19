@@ -933,9 +933,9 @@ class ParticleFilterGeometryEngine(GeometryEngine):
         """
         proposal_order_tool = ProposalOrderTools(topology_proposal)
         growth_parameter_name = 'growth_stage'
-        forward_init = time.time()
+
         atom_proposal_order, logp_choice = proposal_order_tool.determine_proposal_order(direction='forward')
-        proposal_order_forward = time.time() - forward_init
+
         structure = parmed.openmm.load_topology(topology_proposal.new_topology, topology_proposal.new_system)
 
         # find and copy known positions
@@ -980,8 +980,6 @@ class ParticleFilterGeometryEngine(GeometryEngine):
         proposal_order_tool = ProposalOrderTools(topology_proposal)
         growth_parameter_name = 'growth_stage'
         atom_proposal_order, logp_choice = proposal_order_tool.determine_proposal_order(direction='reverse')
-
-        structure = parmed.openmm.load_topology(topology_proposal.old_topology, topology_proposal.old_system)
 
         growth_system_generator = GeometrySystemGeneratorFast(topology_proposal.old_system, atom_proposal_order.keys(),
                                                           growth_parameter_name,
