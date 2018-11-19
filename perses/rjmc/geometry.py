@@ -1374,7 +1374,7 @@ class BootstrapParticleFilter(object):
         angle = self._get_relevant_angle(atom, bond_atom, angle_atom)
 
         if not conditional:
-            theta = self._propose_angle(angle)
+            theta = self._propose_angle(angle).value_in_unit(units.radians)
         else:
             theta = internal_coords[1]
         angle_k = angle.type.k
