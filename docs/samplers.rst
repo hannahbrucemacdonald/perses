@@ -12,7 +12,6 @@ Samplers for driving sampling over conformations or chemical states.
 
     ThermodynamicState
     SamplerState
-    GHMCIntegrator
     MCMCSampler
     ExpandedEnsembleSampler
     SAMSSampler

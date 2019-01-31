@@ -44,6 +44,15 @@ Modules
   storage
   analysis
 
+
+Examples
+--------
+
+.. toctree::
+  :maxdepth: 1
+
+  relativecdk 
+
 Indices and tables
 ==================
 

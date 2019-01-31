@@ -55,12 +55,11 @@ This version is recommended for all users not actively developing new algorithms
 Development build
 -----------------
 
-The bleeding-edge, absolute latest, very likely unstable development build of perses is pushed to `binstar <https://anaconda.org/omnia/perses>`_ with each GitHub commit, and can be obtained by
+The bleeding-edge, absolute latest, very likely unstable development build of perses is available on github 
 
 .. code-block:: bash
 
-   $ conda config --add channels omnia
-   $ conda install perses-dev
+   $ git clone git@github.com:choderalab/perses.git 
 
 .. warning:: Development builds may be unstable and are generally subjected to less testing than releases.  Use at your own risk!
 
