@@ -61,7 +61,7 @@ script:
   - if [ "$OPENMM" == "beta" ]; then echo "Using OpenMM beta"; conda remove --yes --force openmm; conda clean -tipsy; conda install --yes --override-channels -c omnia/label/beta openmm; fi
   - if [ "$OPENMM" == "nightly" ]; then echo "Using OpenMM nightly dev build."; conda remove --yes --force openmm; conda clean -tipsy; conda install --yes --override-channels -c omnia-dev openmm; fi
   # Test the package
-  - cd devtools && nosetests perses --nocapture --verbosity=3 --with-timer -a '!advanced' && cd ..
+  - cd devtools && nosetests perses --nocapture --with-coverage --verbosity=3 --with-timer -a '!advanced' && cd ..
 
 env:
   global:
