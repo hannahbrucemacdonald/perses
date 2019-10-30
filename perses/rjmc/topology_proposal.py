@@ -737,6 +737,10 @@ class TopologyProposal(object):
         contribution from the chemical proposal to the log probability of acceptance (Eq. 36 for hybrid; Eq. 53 for two-stage)
     new_to_old_atom_map : dict
         {new_atom_idx : old_atom_idx} map for the two systems
+    old_oemol : openeye.oechem.oemol, optional, default=None
+        oemol of the old system
+    new_oemol : openeye.oechem.oemol, optional, default=None
+        oemol of the new system
     old_alchemical_atoms : list, optional, default=None
         List of all atoms in old system that are being transformed.
         If None, all atoms are assumed to be part of the alchemical region.
@@ -763,6 +767,10 @@ class TopologyProposal(object):
         {new_atom_idx : old_atom_idx} map for the two systems
     old_to_new_atom_map : dict
         {old_atom_idx : new_atom_idx} map for the two systems
+    old_oemol : openeye.oechem.oemol
+        oemol object of old system, or None
+    new_oemol : openeye.oechem.oemol
+        oemol object of new system, or None
     new_alchemical_atoms : list
         List of all atoms in new system that are being transformed
     new_environment_atoms : list
@@ -795,6 +803,7 @@ class TopologyProposal(object):
                  new_topology=None, new_system=None,
                  old_topology=None, old_system=None,
                  logp_proposal=None,
+                 old_oemol=None, new_oemol=None
                  new_to_old_atom_map=None, old_alchemical_atoms=None,
                  old_chemical_state_key=None, new_chemical_state_key=None,
                  old_residue_name='MOL', new_residue_name='MOL',
@@ -807,6 +816,8 @@ class TopologyProposal(object):
         self._old_topology = old_topology
         self._old_system = old_system
         self._logp_proposal = logp_proposal
+        self._old_oemol = old_oemol
+        self._new_oemol = new_oemol
         self._new_chemical_state_key = new_chemical_state_key
         self._old_chemical_state_key = old_chemical_state_key
         self._old_residue_name = old_residue_name
@@ -836,6 +847,12 @@ class TopologyProposal(object):
     @property
     def logp_proposal(self):
         return self._logp_proposal
+    @property
+    def old_oemol(self):
+        return self._old_oemol
+    @property
+    def new_oemol(self):
+        return self._new_oemol
     @property
     def new_to_old_atom_map(self):
         return self._new_to_old_atom_map
@@ -2476,6 +2493,7 @@ class SmallMoleculeSetProposalEngine(ProposalEngine):
         proposal = TopologyProposal(logp_proposal=logp_proposal, new_to_old_atom_map=adjusted_atom_map,
             old_topology=current_topology, new_topology=new_topology,
             old_system=current_system, new_system=new_system,
+            old_oemol=current_mol,new_oemol=proposed_mol,
             old_alchemical_atoms=old_alchemical_atoms,
             old_chemical_state_key=current_mol_smiles, new_chemical_state_key=proposed_mol_smiles,
             old_residue_name=self._residue_name, new_residue_name=self._residue_name)
