@@ -50,6 +50,8 @@ def getSetupOptions(filename):
 
     if 'protocol-type' not in setup_options:
         setup_options['protocol-type'] = 'default'
+    if 'run_type' not in setup_options:
+        setup_options['run_type'] = None 
 
     _logger.info(f"\tDetecting fe_type...")
     if setup_options['fe_type'] == 'sams':
