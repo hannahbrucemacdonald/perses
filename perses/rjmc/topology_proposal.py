@@ -741,6 +741,7 @@ class TopologyProposal(object):
         oemol of the old system
     new_oemol : openeye.oechem.oemol, optional, default=None
         oemol of the new system
+    match : oemol.
     old_alchemical_atoms : list, optional, default=None
         List of all atoms in old system that are being transformed.
         If None, all atoms are assumed to be part of the alchemical region.
@@ -803,7 +804,7 @@ class TopologyProposal(object):
                  new_topology=None, new_system=None,
                  old_topology=None, old_system=None,
                  logp_proposal=None,
-                 old_oemol=None, new_oemol=None
+                 old_oemol=None, new_oemol=None,
                  new_to_old_atom_map=None, old_alchemical_atoms=None,
                  old_chemical_state_key=None, new_chemical_state_key=None,
                  old_residue_name='MOL', new_residue_name='MOL',
@@ -898,6 +899,27 @@ class TopologyProposal(object):
     @property
     def metadata(self):
         return self._metadata
+
+    def generate_smirks(self):
+        """
+        If the old and new oemol are defined, a smirks tranformation of the transformation will be generated
+
+        Returns 
+        --------
+        reaction smirks : str
+            The smirks string of the transformation 
+        """
+        if self._old_oemol is None or self._new_oemol is None:
+            _logger.warn("topology must contain old and new oemols to generate smirks")
+            return
+        else:
+            # need to tag all of the atoms
+
+            old_tagged_smi = oechem.OECreateSmiString(old_oemol) 
+            new_tagged_smi = oechem.OECreateSmiString(new_oemol) 
+            return f'{old_tagged_smi} >> {new_tagged_smi}'
+         
+            
 
 class ProposalEngine(object):
     """

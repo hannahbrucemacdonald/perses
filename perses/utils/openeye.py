@@ -269,3 +269,48 @@ def createSMILESfromOEMol(molecule):
     smiles = oechem.OECreateSmiString(molecule,
                              oechem.OESMILESFlag_DEFAULT | oechem.OESMILESFlag_Hydrogens)
     return smiles
+
+def map_oemol(oemol,old_to_new_atom_map,index):
+    """
+    Returns a oemol object with relevant alchemical atoms tagged 
+
+    Parameters
+    ----------
+    oemol : openeye.oechem.oemol 
+        oemol object to label 
+    old_to_new_atom_map : dict
+        map of the old molecule onto the new        
+    index : int
+        int, either 0 (old) or 1 (new) to indicate which system is being labelled
+
+    Returns
+    -------
+    tagged_mol : openeye.oechem.oemol 
+        tagged oemol object 
+    """
+    mol = copy.deepcopy(oemol)
+
+def generate_smirks(old_oemol,new_oemol,old_to_new_atom_map):
+    """
+    Load an SDF file into an OEMol. Since SDF files can contain multiple molecules, an index can be provided as well.
+
+    Parameters
+    ----------
+    old_oemol : openeye.oechem.oemol 
+        oemol object of the old system 
+    new_oemol : openeye.oechem.oemol 
+        oemol object of the new system 
+    old_to_new_atom_map : dict
+        map of the old molecule onto the new        
+
+    Returns
+    -------
+    smirks : str 
+        Alchemical transformation smirks 
+    """
+    old_tagged_oemol = map_oemol(old_oemol,old_to_new_atom_map,index=0)
+    new_tagged_oemol = map_oemol(new_oemol,old_to_new_atom_map,index=1)
+
+    old_tagged_smi = oechem.OECreateSmiString(old_tagged_oemol) 
+    new_tagged_smi = oechem.OECreateSmiString(new_tagged_oemol) 
+    return f'{old_tagged_smi} >> {new_tagged_smi}'
